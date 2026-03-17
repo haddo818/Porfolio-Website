@@ -1,7 +1,20 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Heart, Guitar, Music, Hammer, Tv } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "../components/ui/dialog";
 import { motion } from "motion/react";
+import { supabase, INTEREST_IDS } from "@/lib/supabase";
+import { toast } from "sonner";
+
+const SESSION_KEY = "interest-session-id";
+
+function getOrCreateSessionId(): string {
+  let id = localStorage.getItem(SESSION_KEY);
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem(SESSION_KEY, id);
+  }
+  return id;
+}
 
 interface Interest {
   id: string;
@@ -50,54 +63,65 @@ const interests: Interest[] = [
   },
 ];
 
+const initialLikes = { bass: 0, band: 0, handaxe: 0, animation: 0 };
+
 export default function Interests() {
-  const [likes, setLikes] = useState<{ [key: string]: number }>({});
+  const [likes, setLikes] = useState<{ [key: string]: number }>(initialLikes);
   const [userLikes, setUserLikes] = useState<Set<string>>(new Set());
   const [selectedInterest, setSelectedInterest] = useState<Interest | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // Load likes from localStorage
-  useEffect(() => {
-    const storedLikes = localStorage.getItem("interests-likes");
-    const storedUserLikes = localStorage.getItem("interests-user-likes");
-    
-    if (storedLikes) {
-      setLikes(JSON.parse(storedLikes));
-    } else {
-      setLikes({
-        bass: 0,
-        band: 0,
-        handaxe: 0,
-        animation: 0,
-      });
+  const fetchLikes = useCallback(async () => {
+    const sessionId = getOrCreateSessionId();
+    const { data: allRows, error } = await supabase
+      .from("interest_likes")
+      .select("interest_id, session_id");
+
+    if (error) {
+      console.error("Failed to fetch likes:", error);
+      setLoading(false);
+      return;
     }
-    
-    if (storedUserLikes) {
-      setUserLikes(new Set(JSON.parse(storedUserLikes)));
-    }
+
+    const counts = { ...initialLikes };
+    const myLikes = new Set<string>();
+    (allRows || []).forEach((row: { interest_id: string; session_id: string }) => {
+      if (INTEREST_IDS.includes(row.interest_id as any)) {
+        counts[row.interest_id] = (counts[row.interest_id] ?? 0) + 1;
+        if (row.session_id === sessionId) myLikes.add(row.interest_id);
+      }
+    });
+    setLikes(counts);
+    setUserLikes(myLikes);
+    setLoading(false);
   }, []);
 
-  const handleLike = (id: string) => {
+  useEffect(() => {
+    fetchLikes();
+  }, [fetchLikes]);
+
+  const handleLike = async (id: string) => {
+    const sessionId = getOrCreateSessionId();
     if (userLikes.has(id)) {
-      // Unlike
-      const newLikes = { ...likes, [id]: Math.max(0, likes[id] - 1) };
-      const newUserLikes = new Set(userLikes);
-      newUserLikes.delete(id);
-      
-      setLikes(newLikes);
-      setUserLikes(newUserLikes);
-      localStorage.setItem("interests-likes", JSON.stringify(newLikes));
-      localStorage.setItem("interests-user-likes", JSON.stringify([...newUserLikes]));
+      const { error } = await supabase
+        .from("interest_likes")
+        .delete()
+        .eq("interest_id", id)
+        .eq("session_id", sessionId);
+      if (error) {
+        toast.error("하트 취소에 실패했어요.");
+        return;
+      }
     } else {
-      // Like
-      const newLikes = { ...likes, [id]: (likes[id] || 0) + 1 };
-      const newUserLikes = new Set(userLikes);
-      newUserLikes.add(id);
-      
-      setLikes(newLikes);
-      setUserLikes(newUserLikes);
-      localStorage.setItem("interests-likes", JSON.stringify(newLikes));
-      localStorage.setItem("interests-user-likes", JSON.stringify([...newUserLikes]));
+      const { error } = await supabase
+        .from("interest_likes")
+        .insert({ interest_id: id, session_id: sessionId });
+      if (error) {
+        toast.error("하트 반영에 실패했어요.");
+        return;
+      }
     }
+    await fetchLikes();
   };
 
   return (
@@ -108,8 +132,14 @@ export default function Interests() {
       <p className="text-center text-gray-600 mb-2">
         공감되시는 아이콘에는 하트를 눌러주세요
       </p>
-      <p className="text-center text-gray-600 mb-8">
+      <p className="text-center text-gray-600 mb-2">
         아이콘을 클릭하면 상세내용을 확인할 수 있어요!
+      </p>
+      <p className="text-center text-gray-600 mb-8">
+        <a href="/statistics" className="text-[#1E90FF] hover:underline">
+          Statistics
+        </a>
+        에서 모든 방문자가 누른 하트 통계를 볼 수 있어요.
       </p>
 
       {/* 2x2 Grid */}

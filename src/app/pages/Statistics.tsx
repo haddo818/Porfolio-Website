@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from "recharts";
 import { TrendingUp } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 
 const COLORS = {
   bass: "#1E90FF",
@@ -19,48 +20,52 @@ const LABELS = {
 export default function Statistics() {
   const [chartData, setChartData] = useState<any[]>([]);
   const [totalLikes, setTotalLikes] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  const loadData = useCallback(async () => {
+    const { data: rows, error } = await supabase
+      .from("interest_likes")
+      .select("interest_id");
+
+    if (error) {
+      console.error("Failed to fetch likes:", error);
+      setChartData([]);
+      setTotalLikes(0);
+      setLoading(false);
+      return;
+    }
+
+    const counts: Record<string, number> = { bass: 0, band: 0, handaxe: 0, animation: 0 };
+    (rows || []).forEach((row: { interest_id: string }) => {
+      if (row.interest_id in counts) {
+        counts[row.interest_id] += 1;
+      }
+    });
+    const total = Object.values(counts).reduce((a, b) => a + b, 0);
+
+    if (total > 0) {
+      setChartData(
+        Object.entries(counts)
+          .filter(([, value]) => value > 0)
+          .map(([key, value]) => ({
+            name: LABELS[key as keyof typeof LABELS],
+            value,
+            id: key,
+          }))
+      );
+      setTotalLikes(total);
+    } else {
+      setChartData([]);
+      setTotalLikes(0);
+    }
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
-    const loadData = () => {
-      const storedLikes = localStorage.getItem("interests-likes");
-      
-      if (storedLikes) {
-        const likes = JSON.parse(storedLikes);
-        const total = Object.values(likes).reduce((sum: number, val: any) => sum + val, 0) as number;
-        
-        if (total > 0) {
-          const data = Object.entries(likes).map(([key, value]) => ({
-            name: LABELS[key as keyof typeof LABELS],
-            value: value as number,
-            id: key,
-          }));
-          
-          setChartData(data);
-          setTotalLikes(total);
-        } else {
-          setChartData([]);
-          setTotalLikes(0);
-        }
-      }
-    };
-
     loadData();
-
-    // Listen for storage changes
-    const handleStorageChange = () => {
-      loadData();
-    };
-
-    window.addEventListener("storage", handleStorageChange);
-    
-    // Poll for changes (for same-tab updates)
-    const interval = setInterval(loadData, 1000);
-
-    return () => {
-      window.removeEventListener("storage", handleStorageChange);
-      clearInterval(interval);
-    };
-  }, []);
+    const interval = setInterval(loadData, 5000);
+    return () => clearInterval(interval);
+  }, [loadData]);
 
   const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
@@ -84,12 +89,17 @@ export default function Statistics() {
           공감 통계
         </h1>
         <p className="text-gray-600">
-          방문자들이 공감한 관심사를 한눈에 확인해보세요
+          모든 방문자가 Interests에서 누른 하트를 한눈에 확인해보세요
         </p>
       </div>
 
       <div className="bg-white rounded-2xl shadow-lg p-8 max-w-4xl mx-auto">
-        {totalLikes === 0 ? (
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-20">
+            <div className="text-4xl mb-4">⏳</div>
+            <p className="text-gray-600">통계를 불러오는 중...</p>
+          </div>
+        ) : totalLikes === 0 ? (
           // Empty State
           <div className="flex flex-col items-center justify-center py-20">
             <div className="text-8xl mb-6">💭</div>
