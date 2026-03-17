@@ -1,7 +1,7 @@
 
-  # UI Design for Portfolio Website
+  # 정연우 포트폴리오
 
-  This is a code bundle for UI Design for Portfolio Website. The original project is available at https://www.figma.com/design/S0gPKG52KXYqIINKt7399p/UI-Design-for-Portfolio-Website.
+  This is a code bundle for 정연우 포트폴리오. The original project is available at https://www.figma.com/design/S0gPKG52KXYqIINKt7399p/UI-Design-for-Portfolio-Website.
 
   ## Running the code
 
